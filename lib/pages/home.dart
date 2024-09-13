@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:process_run/process_run.dart'; // Import process_run
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -34,8 +33,7 @@ class _HomePageState extends State<HomePage> {
       File imageFile = File(pickedFile.path);
       int imageSize = await imageFile.length(); // Size in bytes
 
-      // Limit size to 2MB (2 * 1024 * 1024 bytes)
-      int maxSizeInBytes = 2 * 1024 * 1024;
+      int maxSizeInBytes = 5 * 1024 * 1024;
 
       if (imageSize <= maxSizeInBytes) {
         setState(() {
@@ -43,7 +41,7 @@ class _HomePageState extends State<HomePage> {
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ukuran gambar tidak boleh lebih dari 2MB')),
+          SnackBar(content: Text('Ukuran gambar tidak boleh lebih dari 5MB')),
         );
       }
     } else {
@@ -59,38 +57,67 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    // Check for hidden messages using Python script
     try {
-      final result = await run(
-        'python', // Ensure Python is installed and available in the PATH
-        ['C:/Users/Ahmad Arfa/Documents/Magang/diskusi_pr_2/lib/python/steganography_check.py', _image!.path],
-      );
-      print('Python script output: ${result.stdout}');
-      print('Python script errors: ${result.stderr}');
+      // Read image as bytes
+      var imageAsBytes = await _image!.readAsBytes();
 
-      if (result.stdout.contains('Hidden message detected')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Hidden message detected!')),
-        );
-        return;
+      // Convert bytes to hex values
+      List<String> hexList = imageAsBytes.map((byte) {
+        return byte
+            .toRadixString(16)
+            .padLeft(2, '0'); // Convert each byte to hex
+      }).toList();
+
+      print("Hex Values: $hexList");
+      print("Hex Values Length: ${hexList.length}");
+      print("Image Path: ${_image!.path}");
+
+      // Define a map of suspicious SQL keywords with their hex values
+      Map<String, String> suspiciousWordsHex = {
+        "SELECT": "53454c454354",
+        "INSERT": "494e53455254",
+        "UPDATE": "555044415445",
+        "DELETE": "44454c455445",
+        "DROP": "44524f50",
+        "ALTER": "414c544552",
+        "UNION": "554e494f4e",
+        "CREATE": "435245415445",
+        "EXEC": "45584543",
+        "EXECUTE": "45584543555445",
+      };
+  
+      // Iterate over the hex list and check for any suspicious word patterns
+      for (int i = 0; i < hexList.length; i++) {
+        for (var word in suspiciousWordsHex.keys) {
+          // Get the hex representation of the current word
+          String wordHex = suspiciousWordsHex[word]!;
+
+          // Calculate the required slice length for the word
+          int sliceLength = wordHex.length ~/ 2;
+
+          // Ensure that there's enough room to slice
+          if (i <= hexList.length - sliceLength) {
+            // Slice the hex values for the current word length
+            List<String> hexSlice = hexList.sublist(i, i + sliceLength);
+
+            // Check if the current hex slice matches the word's hex representation
+            if (hexSlice.join('') == wordHex) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("File is Suspicious! (Contains '$word')")),
+              );
+              return; // Stop processing if a suspicious word is detected
+            }
+          }
+        }
       }
-    } catch (e) {
-      print('Error running Python script: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to check image for hidden messages!')),
-      );
-      return;
-    }
 
-    try {
+      // Continue with uploading and saving the image if no hidden messages or errors
       final imageUrl = await uploadImage(_image!);
       if (imageUrl == null) {
-        throw Exception('Failed to get image URL');
+        throw Exception('Gagal mendapatkan URL gambar');
       }
 
       final imageModel = ImageModel(url: imageUrl);
-
-      print(imageModel.url);
 
       final savedData = {
         'imagePath': imageModel.url,

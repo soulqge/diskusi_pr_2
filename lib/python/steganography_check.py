@@ -1,7 +1,10 @@
 import sys
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFile
 from skimage.metrics import structural_similarity as ssim
+
+# Enable loading of truncated images to detect broken data streams
+ImageFile.LOAD_TRUNCATED_IMAGES = False
 
 def compute_metrics(original_array, processed_array):
     # Convert images to grayscale if they are not already
@@ -21,6 +24,8 @@ def compute_metrics(original_array, processed_array):
 def analyze_image(image_path):
     try:
         img = Image.open(image_path)
+        img.verify()  # Check if the image is broken or truncated
+        img = Image.open(image_path)  # Reload image after verification
         img_array = np.array(img)
 
         # Apply a median filter to the image
@@ -39,6 +44,9 @@ def analyze_image(image_path):
         else:
             return "No hidden message detected"
 
+    except (IOError, SyntaxError) as e:
+        print(f"Error: Corrupted image file: {e}")
+        return "Corrupted image file"
     except Exception as e:
         print(f"Error analyzing image: {e}")
         return "Error analyzing image"
